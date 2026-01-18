@@ -1,0 +1,224 @@
+import re
+
+# --- Token class ---
+class Token:
+    def __init__(self, type_, value=None):
+        self.type = type_
+        self.value = value
+    def __repr__(self):
+        return f"{self.type}:{self.value}"
+
+# --- Lexer ---
+def tokenize(code):
+    token_specification = [
+        ('NUMBER',   r'\d+'),
+        ('ID',       r'[A-Za-z_][A-Za-z0-9_]*'),
+        ('ASSIGN',   r':'),
+        ('PLUS',     r'\+'),
+        ('MINUS',    r'-'),
+        ('TIMES',    r'\*'),
+        ('DIVIDE',   r'/'),
+        ('LPAREN',   r'\('),
+        ('RPAREN',   r'\)'),
+        ('NEWLINE',  r'\n'),
+        ('SKIP',     r'[ \t]+'),
+        ('STRING', r'"[^"]*"'),
+        ('MISMATCH', r'.'),  # Any other character
+    ]
+    tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_specification)
+    get_token = re.compile(tok_regex).match
+    pos = 0
+    tokens = []
+
+    while True:
+        mo = get_token(code, pos)
+        if not mo:
+            break
+        kind = mo.lastgroup
+        value = mo.group()
+        if kind == 'NUMBER':
+            tokens.append(Token('NUMBER', int(value)))
+        elif kind == 'ID':
+            if value == 'PRINT':
+                tokens.append(Token('PRINT'))
+            else:
+                tokens.append(Token('ID', value))
+        elif kind == 'STRING':
+             value = value[1:-1]
+             tokens.append(Token('STRING', value))
+        elif kind == 'ASSIGN':
+            tokens.append(Token('ASSIGN'))
+        elif kind == 'PLUS':
+            tokens.append(Token('PLUS'))
+        elif kind == 'MINUS':
+            tokens.append(Token('MINUS'))
+        elif kind == 'TIMES':
+            tokens.append(Token('TIMES'))
+        elif kind == 'DIVIDE':
+            tokens.append(Token('DIVIDE'))
+        elif kind == 'LPAREN':
+            tokens.append(Token('LPAREN'))
+        elif kind == 'RPAREN':
+            tokens.append(Token('RPAREN'))
+        elif kind == 'NEWLINE':
+            tokens.append(Token('NEWLINE'))
+        elif kind == 'SKIP':
+            pass
+        elif kind == 'MISMATCH':
+            raise RuntimeError(f'Unexpected character: {value}')
+        pos = mo.end()
+
+    tokens.append(Token('EOF'))
+    return tokens
+
+# --- Parser ---
+class Parser:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.pos = 0
+
+    def peek(self):
+        return self.tokens[self.pos]
+
+    def consume(self, type_=None):
+        current = self.peek()
+        if type_ and current.type != type_:
+            raise RuntimeError(f'Expected {type_} but got {current.type}')
+        self.pos += 1
+        return current
+
+    def parse(self):
+        statements = []
+        while self.peek().type != 'EOF':
+            if self.peek().type == 'NEWLINE':
+                self.consume('NEWLINE')
+                continue
+            stmt = self.statement()
+            statements.append(stmt)
+        return statements
+
+    def statement(self):
+        if self.peek().type == 'PRINT':
+            self.consume('PRINT')
+            expr_node = self.expr()
+            return ('print', expr_node)
+        elif self.peek().type == 'ID' and self.tokens[self.pos + 1].type == 'ASSIGN':
+            return self.assignment()
+        else:
+            return self.expr()
+
+    def assignment(self):
+        var_token = self.consume('ID')
+        self.consume('ASSIGN')
+        expr_node = self.expr()
+        return ('assign', var_token.value, expr_node)
+
+    def expr(self):
+        return self.term()
+
+    def term(self):
+        node = self.factor()
+        while self.peek().type in ('PLUS', 'MINUS'):
+            op = self.consume().type
+            right = self.factor()
+            node = (op.lower(), node, right)
+        return node
+
+    def factor(self):
+        node = self.atom()
+        while self.peek().type in ('TIMES', 'DIVIDE'):
+            op = self.consume().type
+            right = self.atom()
+            node = (op.lower(), node, right)
+        return node
+
+    def atom(self):
+        token = self.peek()
+        if token.type == 'NUMBER':
+            self.consume('NUMBER')
+            return ('num', token.value)
+        elif token.type == 'ID':
+            self.consume('ID')
+            return ('var', token.value)
+        elif token.type == 'STRING':
+             self.consume('STRING')
+             return ('string', token.value)
+        elif token.type == 'LPAREN':
+            self.consume('LPAREN')
+            node = self.expr()
+            self.consume('RPAREN')
+            return node
+        else:
+            raise RuntimeError(f'Unexpected token: {token}')
+
+# --- Interpreter ---
+class Interpreter:
+    def __init__(self):
+        self.variables = {}
+
+    def eval(self, node):
+        nodetype = node[0]
+        if nodetype == 'num':
+            return node[1]
+        elif nodetype == 'var':
+            var_name = node[1]
+        elif nodetype == 'string':
+            return node[1]
+            if var_name in self.variables:
+                return self.variables[var_name]
+            else:
+                raise RuntimeError(f'Undefined variable {var_name}')
+        elif nodetype == 'assign':
+            var_name = node[1]
+            value = self.eval(node[2])
+            self.variables[var_name] = value
+            return value
+        elif nodetype == 'plus':
+            return self.eval(node[1]) + self.eval(node[2])
+        elif nodetype == 'minus':
+            return self.eval(node[1]) - self.eval(node[2])
+        elif nodetype == 'times':
+            return self.eval(node[1]) * self.eval(node[2])
+        elif nodetype == 'divide':
+            return self.eval(node[1]) / self.eval(node[2])
+        elif nodetype == 'print':
+            value = self.eval(node[1])
+            print(value)
+            return value
+        else:
+            # Handle expression nodes like ('plus', left, right)
+            if len(node) == 3:
+                op, left, right = node
+                if op == 'plus':
+                    return self.eval(left) + self.eval(right)
+                elif op == 'minus':
+                    return self.eval(left) - self.eval(right)
+                elif op == 'times':
+                    return self.eval(left) * self.eval(right)
+                elif op == 'divide':
+                    return self.eval(left) / self.eval(right)
+            else:
+                raise RuntimeError(f'Unknown node: {node}')
+
+    def execute(self, statements):
+        result = None
+        for stmt in statements:
+            result = self.eval(stmt)
+        return result
+
+# --- Main with interactive code input ---
+if __name__ == '__main__':
+    print("Welcome to BasicLang!")
+    print("Enter your code line by line. Finish with an empty line.\n")
+    lines = []
+    while True:
+        line = input(">>>")
+        if line.strip() == '':
+            break
+        lines.append(line)
+    code = '\n'.join(lines)
+    tokens = tokenize(code)
+    parser = Parser(tokens)
+    ast = parser.parse()
+    interpreter = Interpreter()
+    interpreter.execute(ast)
