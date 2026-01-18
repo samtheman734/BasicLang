@@ -11,7 +11,7 @@ Welcome to the early release of this project! This programming language is desig
 
 ## Getting Started
 
-To get started, clone the repository and follow the instructions in the setup guide. (You can add specific setup steps here if you have them.)
+To get started, clone the repository and run in your devices terminal or a virtual environment.
 
 ```bash
 git clone https://github.com/samtheman734/Basiclang.git
